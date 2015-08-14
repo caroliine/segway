@@ -1,0 +1,214 @@
+// Description: Segway Mindstorm Robot
+// For: Robotics Wintersession 2015, Drake University
+// Caroline Alexander, Jesse Jeun, Andre Do
+
+#define EYE_PORT1 S3
+#define EYE_VALUE1 SENSOR_3
+#define EYE_PORT2 S2
+#define BOTH_MOTOR OUT_AC
+#define BALANCE_MOTOR OUT_B
+
+#define KP 3.4
+#define KI .50
+#define KD 3
+#define RATIO 0.4
+#define DELAY 50
+
+float target;
+float sensorValue;
+float colorValue;
+float power;
+
+mutex motorMutex;
+mutex taskMutex;
+
+/* Additional features: 
+
+//Touch sensor remote to move segway forward.
+// If Pressed segway will move forward till depressed.
+//Readjusts segway to balanced position after depressed.
+task forward_segway()
+{
+     while(true)
+     {
+          Acquire(movement);
+          float forwardSpeed = 3;
+          float forwardLean = 0;
+          actualLean = MotorRotationCount(BALANCE_MOTOR);
+          if(SENSOR_4 && !SENSOR_1)
+          {
+              forwardSpeed =  (actualLean - forwardLean)*10;
+              if(forwardSpeed < 0)
+              {
+                Acquire(balanceMutex);
+                OnRev(BALANCE_MOTOR, -forwardLean);
+                Release(balanceMutex);
+              }
+              else
+              {
+                Acquire(balanceMutex);
+                OnFwd(BALANCE_MOTOR, forwardLean);
+                Release(balanceMutex);
+              }
+              Acquire(balanceMutex);
+              Off(BALANCE_MOTOR);
+              Release(balanceMutex);
+          }
+          Release(movement);
+          Wait(DELAY);
+     }
+}
+
+
+//Touch sensor remote to move segway backwards.
+//If Pressed segway will move backward till depressed.
+//Readjusts segway to balanced position after depressed.
+task reverse_segway()
+{
+     while(true)
+     {
+          Acquire(movement);
+          float reverseSpeed;
+          float reverseLean = 3;
+          actualLean = MotorRotationCount(BALANCE_MOTOR);
+          if(SENSOR_4 && !SENSOR_1)
+          {
+              reverseSpeed =  (actualLean - reverseLean)*10;
+              if(reverseSpeed < 0)
+              {
+                Acquire(balanceMutex);
+                OnRev(BALANCE_MOTOR, -reverseLean);
+                Release(balanceMutex);
+              }
+              else
+              {
+                Acquire(balanceMutex);
+                OnFwd(BALANCE_MOTOR, reverseLean);
+                Release(balanceMutex);
+              }
+              Acquire(balanceMutex);
+              Off(BALANCE_MOTOR);
+              Release(balanceMutex);
+          }
+          Release(movement);
+          Wait(DELAY);
+     }
+}
+
+
+// lights task
+// used to flash different colors as segway moves forward, reverse, and balanced
+task lights()
+{
+    while(true)
+    {
+       colorValue = EYE_VALUE1;
+       
+       if(colorValue < target)
+       {
+          SetSensorColorGreen(SENSOR_2);
+          Wait(DELAY);
+       }
+       else if (colorValue > target )
+       {
+          SetSensorColorRed(SENSOR_2);
+          Wait(DELAY);
+       else
+       {
+          SetSensorColorBlue(SENSOR_2);
+          Wait(DELAY);
+       }  
+       Wait(DELAY);
+    }
+}
+
+// music task
+// used to play different tones as segway moves forward, reverse, and balanced
+task music()
+{
+     //colorValue = EYE_VALUE1;
+     
+    while(true)
+    {
+       if(EYE_VALUE1 < target)
+       {
+           PlayTone(392, 500);
+           Wait(DELAY);
+       }
+       else if (EYE_VALUE1 > target)
+       {
+           PlayTone(465, 500);
+           Wait(DELAY);
+       }
+       else
+       {
+           PlayTone(400, 500);
+           Wait(DELAY);
+       }       
+       Wait(DELAY);
+    }
+}
+
+End additional features */
+
+
+// start of balance task
+// program keep segway balanced using light sensor as proximity sensor.
+task balance()
+{
+   float integral = 0;       // declering and initializing local variables
+   float derivative = 0;
+   float error = 0;
+   float prev_error = 0;
+   float power =0;
+	
+  // Infinite Loop: Check light intensity. Adjusting the motors to balance the segway.
+  while(true)
+	{
+		sensorValue = EYE_VALUE1;
+    error = (sensorValue - target);
+    integral += error;
+    derivative = error - prev_error;
+    power =(RATIO * (KD*derivative) + (KI*integral) + (KP*error));
+    prev_error = error;
+    Acquire(motorMutex);
+    if (power < -1000 || power > 1000)
+    {
+       break; //StopAllTasks();
+    }
+    if(power < 0)
+    {
+        OnRev(BOTH_MOTOR, -power);
+    }
+    else
+    {
+       OnFwd(BOTH_MOTOR, power);
+    }
+    Release(motorMutex);
+    Wait(DELAY);
+   }
+}
+
+
+task main()
+{
+  SetSensorTouch(IN_1);         // Setting input for sensors
+  SetSensorTouch(IN_4);
+	SetSensorType(EYE_PORT1, SENSOR_TYPE_LIGHT_ACTIVE);
+	SetSensorMode (EYE_PORT1, SENSOR_MODE_RAW);
+	ResetSensor (EYE_PORT1);
+	int count = 0;
+  Off(BALANCE_MOTOR);                   // used to stop balance motor set rotation count.
+  ResetRotationCount(BALANCE_MOTOR);
+
+	while (count < 3)          // while-loop to play 3 count down tones before target value measured
+	{                          // helps to give idea time frame to balance robot.
+		PlayTone(392, 200);
+		NumOut (0, LCD_LINE1, count+1);
+		Wait(800);
+		count++;
+  }
+  target = EYE_VALUE1;      // initializing target value and plays tone to tell user it is done.
+  PlayTone(262, 200);
+  Precedes(balance);    // executes the tasks balance, lights, music, forward, and reverse.
+}
